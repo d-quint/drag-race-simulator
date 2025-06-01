@@ -1,103 +1,174 @@
-import Image from "next/image";
+"use client"
 
-export default function Home() {
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { QueenCreator } from "@/components/queen-creator"
+import { SongManager } from "@/components/song-manager"
+import { SimulationRunner } from "@/components/simulation-runner"
+import { Crown, Music, Users, Play } from "lucide-react"
+import { SavedSessions } from "@/components/saved-sessions"
+
+export interface Queen {
+  id: string
+  name: string
+  imageUrl?: string
+  // Charisma
+  congeniality: number
+  loyalty: number
+  // Uniqueness
+  novelty: number
+  conceptualDepth: number
+  // Nerve
+  riskTolerance: number
+  conflictResilience: number
+  // Talent
+  designVision: number
+  comedyChops: number
+  lipSyncProwess: number
+  runwayPresence: number
+  actingAbility: number
+  vocalMusicality: number
+  // Additional
+  versatility: number
+  adaptability: number
+  starPower: number
+}
+
+export interface Song {
+  id: string
+  title: string
+  artist: string
+  genre: string
+  album_image?: string
+  preview_url?: string
+  spotify_uri?: string
+  hasPreview?: boolean
+}
+
+export interface SimulationResult {
+  winner: Queen
+  topQueens: Queen[]
+  // Add more result details as needed
+}
+
+export interface SimulationSession {
+  id: string
+  name: string
+  timestamp: number
+  result: SimulationResult
+  queens: Queen[]
+  songs: Song[]
+}
+
+export default function DragRaceSimulator() {
+  const [queens, setQueens] = useState<Queen[]>([])
+  const [songs, setSongs] = useState<Song[]>([])
+  const [activeTab, setActiveTab] = useState("queens")
+  const [savedSessions, setSavedSessions] = useState<SimulationSession[]>([])
+
+  useEffect(() => {
+    const saved = localStorage.getItem("dragRaceSimulations")
+    if (saved) {
+      setSavedSessions(JSON.parse(saved))
+    }
+  }, [])
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-indigo-100 p-4">
+      <div className="max-w-7xl mx-auto">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-2">
+            Drag Race Simulator
+          </h1>
+          <p className="text-gray-600 text-lg">
+            Create your queens, curate your songs, and simulate the ultimate drag competition
+          </p>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-4 mb-6">
+            <TabsTrigger value="queens" className="flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              Queens ({queens.length})
+            </TabsTrigger>
+            <TabsTrigger value="songs" className="flex items-center gap-2">
+              <Music className="w-4 h-4" />
+              Songs ({songs.length})
+            </TabsTrigger>
+            <TabsTrigger value="simulation" className="flex items-center gap-2">
+              <Play className="w-4 h-4" />
+              Simulation
+            </TabsTrigger>
+            <TabsTrigger value="results" className="flex items-center gap-2">
+              <Crown className="w-4 h-4" />
+              Results
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="queens">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Queen Management
+                </CardTitle>
+                <CardDescription>
+                  Create and manage your drag queens with detailed stats for Charisma, Uniqueness, Nerve, and Talent
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <QueenCreator queens={queens} setQueens={setQueens} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="songs">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Music className="w-5 h-5" />
+                  Song Library
+                </CardTitle>
+                <CardDescription>Build your collection of lip sync songs for the competition</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <SongManager songs={songs} setSongs={setSongs} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="simulation">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Play className="w-5 h-5" />
+                  Run Simulation
+                </CardTitle>
+                <CardDescription>Start the competition with your created queens and songs</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <SimulationRunner queens={queens} songs={songs} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="results">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Crown className="w-5 h-5" />
+                  Saved Simulations
+                </CardTitle>
+                <CardDescription>View and manage your saved drag race simulations</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <SavedSessions />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
-  );
+  )
 }

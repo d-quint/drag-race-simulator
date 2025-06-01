@@ -1,20 +1,31 @@
-/* filepath: c:\Users\quint\OneDrive\Desktop\dragracesim\drag-race-sim\app\globals.css */
-/* Standard Tailwind Directives */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+@import "./animations.css";
 
-/* Existing Imports */
-@import "tailwindcss";
-@import "tw-animate-css";
+/* Global letter spacing adjustment */
+@layer base {
+  html {
+    letter-spacing: -0.02em;
+  }
+  
+  /* Apply letter spacing to specific text elements for better readability */
+  h1, h2, h3, h4, h5, h6, p, span, div, button, a, label, input, select, textarea {
+    letter-spacing: -0.02em;
+  }
+}
 
-@custom-variant dark (&:is(.dark *));
+/* Global letter spacing adjustment */
+html {
+  letter-spacing: -0.02em;
+}
 
-@theme inline {
+/* Additional CSS variables for components */
+:root {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -119,49 +130,14 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-}
-
-/* Custom animations */
-@keyframes spin-slow {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.animate-spin-slow {
-  animation: spin-slow 8s linear infinite;
-}
-
-/* Custom Shadow Glow Effects */
-@layer utilities {
-  .shadow-glow {
-    box-shadow: 0 0 8px 2px rgba(236, 72, 153, 0.5);
-  }
-  
-  .shadow-glow-yellow {
-    box-shadow: 0 0 8px 2px rgba(252, 211, 77, 0.6);
-  }
-  
-  .shadow-glow-purple {
-    box-shadow: 0 0 8px 2px rgba(147, 51, 234, 0.5);
-  }
-  
-  /* Animation for slow pulsing effect */
-  .animate-pulse-slow {
-    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  }
-}
-
+/* Basic styling for border and outline */
 * {
-  letter-spacing: -0.5px;
+  border-color: var(--border);
+  outline-color: var(--ring);
+  outline-width: 1px;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
 }

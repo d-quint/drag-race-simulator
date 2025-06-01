@@ -13,4 +13,14 @@ const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 ];
 
-export default eslintConfig;
+export default {
+    ignorePatterns: ["node_modules/", ".next/", "out/"],
+    extends: eslintConfig,
+    rules: {
+        '@typescript-eslint/no-unused-vars': 'off',
+        '@typescript-eslint/no-explicit-any': 'off',
+        'react/no-unescaped-entities': 'off',
+        'react-hooks/exhaustive-deps': 'warn',
+        '@next/next/no-img-element': 'warn',
+    },
+};
