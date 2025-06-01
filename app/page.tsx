@@ -78,9 +78,21 @@ export default function DragRaceSimulator() {
     <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-indigo-100 p-4">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-2">
-            Drag Race Simulator
-          </h1>
+          <div className="flex justify-center mb-4">
+            <img 
+              src="https://raw.githubusercontent.com/d-quint/drag-race-simulator/refs/heads/master/res/logo.png"
+              alt="Drag Race Simulator"
+              className="h-20 w-auto object-contain"
+              onError={(e) => {
+                // Fallback to text if image fails to load
+                e.currentTarget.style.display = 'none';
+                const fallback = document.createElement('h1');
+                fallback.className = 'text-4xl font-bold bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent';
+                fallback.textContent = 'Drag Race Simulator';
+                e.currentTarget.parentNode?.appendChild(fallback);
+              }}
+            />
+          </div>
           <p className="text-gray-600 text-lg">
             Create your queens, curate your songs, and simulate the ultimate drag competition
           </p>
