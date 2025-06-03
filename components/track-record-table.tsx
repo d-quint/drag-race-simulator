@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import type { Queen } from "@/app/page"
+import type { Queen } from "@/lib/types"
 
 interface TrackRecordTableProps {
   queens: Queen[]
@@ -30,7 +30,7 @@ export function TrackRecordTable({ queens, episodes, currentEpisode }: TrackReco
       case "WINNER":
         return "bg-yellow-400 text-black font-bold"
       case "TOP2":
-        return "bg-gray-400 text-white" // Updated to match RUN style
+        return "bg-gray-400 text-white" // Silver/grey color for legacy format runner-up
       case "3RD":
         return "bg-amber-600 text-white"
       case "4TH":
@@ -55,11 +55,11 @@ export function TrackRecordTable({ queens, episodes, currentEpisode }: TrackReco
       case "ELIM":
         return "ELIM"
       case "RUN":
-        return "RUN"
+        return "RUN"      
       case "WINNER":
         return "WINNER"
       case "TOP2":
-        return "RUN" // Changed from "RUNNER-UP" to "RUN"
+        return "TOP2" // Show TOP2 for legacy format runner-up
       case "3RD":
         return "3RD"
       case "4TH":
@@ -103,11 +103,65 @@ export function TrackRecordTable({ queens, episodes, currentEpisode }: TrackReco
           record.push("")
         }
         continue
-      }
-
-      // Handle finale episode separately
+      }    // Handle finale episode separately
       if (episode.challenge === "Finale") {
-        // Get the winner name handling both string and object types
+        // First check if we have detailed placements in the episode data
+        if (episode.details?.placements) {
+          const placement = episode.details.placements[queen.name];
+          
+          if (placement === "WINNER") {
+            record.push("WINNER");
+            finalPlacement = 1;
+          } 
+          else if (placement === "TOP2") {
+            record.push("TOP2");
+            finalPlacement = 2;
+          }
+          else if (placement === "3RD") {
+            record.push("3RD");
+            finalPlacement = 3;
+          }
+          else if (placement === "4TH") {
+            record.push("4TH");
+            finalPlacement = 4;
+          }
+          // If placement exists but isn't one of the above, use it anyway
+          else if (placement) {
+            record.push(placement);
+            // Try to determine final placement from the standings
+            if (episode.standings && episode.standings[queen.name]) {
+              finalPlacement = episode.standings[queen.name];
+            }
+          }
+          continue;
+        }
+        
+        // Next check the standings map, which should be most reliable
+        if (episode.standings) {
+          const standing = episode.standings[queen.name];
+          if (standing === 1) {
+            record.push("WINNER");
+            finalPlacement = 1;
+            continue;
+          } 
+          else if (standing === 2) {
+            record.push("TOP2");
+            finalPlacement = 2;
+            continue;
+          }
+          else if (standing === 3) {
+            record.push("3RD");
+            finalPlacement = 3;
+            continue;
+          }
+          else if (standing === 4) {
+            record.push("4TH");
+            finalPlacement = 4;
+            continue;
+          }
+        }
+        
+        // Fallback to direct winner/bottom2 check if no other data is available
         const winnerName = typeof episode.winner === 'string' ? 
           episode.winner : 
           (episode.winner as any)?.name || '';
@@ -130,16 +184,16 @@ export function TrackRecordTable({ queens, episodes, currentEpisode }: TrackReco
           finalPlacement = 1
         } 
         // Check if queen is runner-up (in top 2)
-        else if (bottom2Names.includes(queen.name)) {
+        else if (bottom2Names.includes(queen.name) && queen.name !== winnerName) {
           record.push("TOP2")
           finalPlacement = 2
         } 
-        // Check for 3rd/4th placers from finale details
-        else if (episode.details?.placements?.[queen.name] === "3RD") {
+        // Check for 3rd/4th placers from standings
+        else if (episode.standings && episode.standings[queen.name] === 3) {
           record.push("3RD")
           finalPlacement = 3
         }
-        else if (episode.details?.placements?.[queen.name] === "4TH") {
+        else if (episode.standings && episode.standings[queen.name] === 4) {
           record.push("4TH")
           finalPlacement = 4
         }
@@ -285,10 +339,9 @@ export function TrackRecordTable({ queens, episodes, currentEpisode }: TrackReco
           <div className="flex items-center gap-1">
             <div className="bg-yellow-400 text-black font-bold text-xs rounded-md px-2 py-1">WINNER</div>
             <span>Season Winner</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="bg-gray-400 text-white text-xs rounded-md px-2 py-1">RUN</div>
-            <span>Runner-up</span>
+          </div>          <div className="flex items-center gap-1">
+            <div className="bg-gray-400 text-white text-xs rounded-md px-2 py-1">TOP2</div>
+            <span>Legacy Runner-up</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="bg-amber-600 text-white text-xs rounded-md px-2 py-1">3RD</div>

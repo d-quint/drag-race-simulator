@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Trash2, Plus, Music, Shuffle, ListMusic, Link } from "lucide-react"
-import type { Song } from "@/app/page"
+import type { Song } from "@/lib/types"
 import { 
   initiateSpotifyAuth,
   isSpotifyAuthenticated,
@@ -17,12 +17,9 @@ import {
   getPlaylistTracks,
   getPlaylist,
   transformSpotifyTrackToSong,
-  extractPlaylistId,
-  getCurrentSpotifyClientId
+  extractPlaylistId
 } from "@/lib/spotify-api"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { SpotifyConfig } from "@/components/spotify-config"
-import { Cog } from "lucide-react"
 
 interface SongManagerProps {
   songs: Song[]
@@ -57,7 +54,6 @@ export function SongManager({ songs, setSongs }: SongManagerProps) {
   const [playlistUrl, setPlaylistUrl] = useState("")
   const [isLoadingUrlPlaylist, setIsLoadingUrlPlaylist] = useState(false)
   const [urlError, setUrlError] = useState("")
-  const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(false)
   
   // Check if user is authenticated with Spotify
   useEffect(() => {
@@ -268,22 +264,6 @@ export function SongManager({ songs, setSongs }: SongManagerProps) {
                 <Button onClick={handleConnectSpotify} className="bg-green-500 hover:bg-green-600">
                   Connect with Spotify
                 </Button>
-                <div className="text-xs text-gray-500 flex items-center gap-2">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => setIsConfigDialogOpen(true)}
-                    className="text-xs h-6 px-2"
-                  >
-                    <Cog className="w-3 h-3 mr-1" />
-                    Configure API Key
-                  </Button>
-                  {getCurrentSpotifyClientId() && (
-                    <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-700">
-                      Client ID: {getCurrentSpotifyClientId().slice(0, 4)}...{getCurrentSpotifyClientId().slice(-4)}
-                    </span>
-                  )}
-                </div>
               </div>
             </div>
           ) : (
@@ -444,15 +424,6 @@ export function SongManager({ songs, setSongs }: SongManagerProps) {
               ) : null}
               Import Songs
             </Button>
-            <Button
-              onClick={() => setIsConfigDialogOpen(true)}
-              variant="outline"
-              size="sm"
-              className="h-9"
-              title="Configure Spotify API"
-            >
-              <Cog className="w-4 h-4" />
-            </Button>
           </>
         ) : (
           <>
@@ -465,15 +436,6 @@ export function SongManager({ songs, setSongs }: SongManagerProps) {
               size="sm"
             >
               Connect Spotify
-            </Button>
-            <Button
-              onClick={() => setIsConfigDialogOpen(true)}
-              variant="outline"
-              size="sm"
-              className="h-9"
-              title="Configure Spotify API"
-            >
-              <Cog className="w-4 h-4" />
             </Button>
           </>
         )}
@@ -615,16 +577,6 @@ export function SongManager({ songs, setSongs }: SongManagerProps) {
 
       {/* Spotify Integration */}
       {renderSpotifyDialog()}
-      
-      {/* Spotify Configuration Dialog */}
-      <SpotifyConfig
-        isOpen={isConfigDialogOpen}
-        onClose={() => setIsConfigDialogOpen(false)}
-        onConfigured={() => {
-          // Refresh authentication status after configuration
-          setIsLoggedIntoSpotify(isSpotifyAuthenticated());
-        }}
-      />
     </div>
   )
 }

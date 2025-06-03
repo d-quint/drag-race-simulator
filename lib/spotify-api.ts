@@ -1,7 +1,7 @@
 // Spotify API integration for the drag race simulator
 // Uses the Authorization Code with PKCE flow for client-side authentication
 
-const CLIENT_ID = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID || '';
+const CLIENT_ID = '5af3a96306ad4ba0bb9f55a9b2df3c4d';
 
 // Helper function to get the correct redirect URI
 const getRedirectUri = (): string => {

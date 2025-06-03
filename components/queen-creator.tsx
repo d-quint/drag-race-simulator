@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Slider } from "@/components/ui/slider"
 import { Trash2, Plus, Edit, Shuffle, Download, Upload, Save, FolderOpen } from "lucide-react"
-import type { Queen } from "@/app/page"
+import type { Queen } from "@/lib/types"
 import React from "react"
 
 interface QueenCreatorProps {

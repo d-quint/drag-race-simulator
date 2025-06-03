@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Crown, Music, Trophy, ChevronRight, X, Maximize2, Minimize2 } from "lucide-react"
-import type { Queen, Song } from "@/app/page"
+import type { Queen, Song } from "@/lib/types"
 import { EpisodeDetails } from "@/components/episode-details"
 import { TrackRecordTable } from "@/components/track-record-table"
 import { generateConfetti } from "@/lib/confetti-utils"
-import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label" 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 // Fisher-Yates shuffle algorithm to randomize array order
 function shuffleArray<T>(array: T[]): T[] {
@@ -71,6 +72,8 @@ interface NarrativeSimulationProps {
   queens: Queen[]
   songs: Song[]
   onComplete: (result: any) => void
+  isQuickMode?: boolean // Keeping for backwards compatibility but no longer used
+  seasonFormat?: "regular" | "legacy" // Season format determines elimination method
 }
 
 interface EpisodeData {
@@ -89,6 +92,11 @@ interface EpisodeData {
   details: any
   standings: { [queenName: string]: number }
   groups?: { [group: string]: string[] } // For Girl Groups challenge
+  
+  // Legacy format properties
+  top2?: string[] // Top 2 queens for legacy format
+  lipstickChoices?: { [queenName: string]: string } // Which queen chose which lipstick
+  loserWouldHaveChosen?: string // Who the loser would have eliminated
 }
 
 type SimulationStep =
@@ -96,6 +104,10 @@ type SimulationStep =
   | "challenge-performance"
   | "girl-groups-team-selection"  // New step for Girl Groups team selection
   | "girl-groups-performance"     // New step for Girl Groups performance
+  | "top-two-announcement"        // For legacy format: announcing top 2
+  | "legacy-lipsync"              // For legacy format: top 2 lip sync
+  | "lipstick-selection"          // For legacy format: winner reveals lipstick
+  | "losing-queen-choice-reveal"  // For legacy format: loser reveals who they would have eliminated
   | "runway-performance"
   | "deliberation"
   | "winner-announcement"
@@ -115,12 +127,11 @@ type SimulationStep =
   | "finale-final-lipsync"
   | "finale-crowning"
 
-// Define relationship types
-type RelationshipType = "alliance" | "enemy" | "neutral";
+// Import relationship types from the shared library
+import { RelationshipType, RelationshipData as RelationshipLibData } from "@/lib/relationship-manager";
 
-interface Relationship {
-  type: RelationshipType;
-  strength: number; // 1-10, with 10 being the strongest
+// Local interface for backwards compatibility
+interface Relationship extends RelationshipLibData {
   formed: number;   // Episode when the relationship was formed/updated
 }
 
@@ -131,7 +142,7 @@ interface SpotifySong {
   preview_url?: string;
 }
 
-export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimulationProps) {
+export function NarrativeSimulation({ queens, songs, onComplete, isQuickMode = false, seasonFormat = "regular" }: NarrativeSimulationProps) {
   const [currentStep, setCurrentStep] = useState<SimulationStep>("intro")
   const [currentEpisode, setCurrentEpisode] = useState<EpisodeData | null>(null)
   const [remainingQueens, setRemainingQueens] = useState<Queen[]>(queens)
@@ -139,6 +150,13 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
   const [allEpisodes, setAllEpisodes] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [sessionName, setSessionName] = useState("")
+  
+  // Legacy format state
+  const [topTwoQueens, setTopTwoQueens] = useState<string[]>([])
+  const [legacyLipSyncWinner, setLegacyLipSyncWinner] = useState<string>("")
+  const [bottomQueens, setBottomQueens] = useState<string[]>([])
+  const [lipstickChoices, setLipstickChoices] = useState<{[queenName: string]: string}>({})
+  const [loserChoice, setLoserChoice] = useState<string>("")
   
   // Relationship system
   const [relationships, setRelationships] = useState<{[queenName: string]: {[targetName: string]: Relationship}}>({})
@@ -160,19 +178,18 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
   const [currentSpotifySong, setCurrentSpotifySong] = useState<SpotifySong | null>(null);
   const [isPlayerMinimized, setIsPlayerMinimized] = useState(false);
   const [showFloatingPlayer, setShowFloatingPlayer] = useState(false);
-
   // Track used challenges and songs
   const [usedChallenges, setUsedChallenges] = useState<Set<string>>(new Set());
-  const [usedSongs, setUsedSongs] = useState<Set<string>>(new Set());
+  const [usedSongs, setUsedSongs] = useState<Set<string>>(new Set());  
+  
+  // Handle auto-advancing functionality - removed as requested  // Auto-advancing functionality removed as requested
 
   const generateEpisode = async () => {
     setIsLoading(true)
     try {
       // Convert Set to Array for JSON serialization
       const usedChallengesArray = Array.from(usedChallenges);
-      const usedSongsArray = Array.from(usedSongs);
-
-      const response = await fetch("/api/simulate-episode", {
+      const usedSongsArray = Array.from(usedSongs);      const response = await fetch("/api/simulate-episode", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -181,14 +198,15 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
           episodeNumber,
           usedChallenges: usedChallengesArray,
           usedSongs: usedSongsArray,
+          seasonFormat: seasonFormat,
+          relationships: relationships,
         }),
       })
 
       if (!response.ok) throw new Error("Failed to generate episode")
 
       const episodeData = await response.json()
-      
-      // Update the tracking sets with newly used challenges and songs
+        // Update the tracking sets with newly used challenges and songs
       if (episodeData.challenge) {
         setUsedChallenges(prev => new Set([...prev, episodeData.challenge]));
       }
@@ -198,6 +216,20 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
         setUsedSongs(prev => new Set([...prev, episodeData.lipSyncSongId]));
       }
       
+      // Update relationships if they were returned from the API
+      if (episodeData.relationships) {
+        setRelationships(episodeData.relationships);
+      }
+      
+      // For legacy format, set up the additional state
+      if (seasonFormat === "legacy" && episodeData.top2 && episodeData.lipstickChoices) {
+        setTopTwoQueens(episodeData.top2);
+        setBottomQueens(episodeData.bottom2);
+        setLegacyLipSyncWinner(episodeData.winner);
+        setLipstickChoices(episodeData.lipstickChoices);
+        setLoserChoice(episodeData.loserWouldHaveChosen);
+      }
+      
       setCurrentEpisode(episodeData)
     } catch (error) {
       console.error("Episode generation error:", error)
@@ -205,11 +237,12 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
       setIsLoading(false)
     }
   }
-
-  const getPlacementColor = (placement: any) => {
+  const getPlacementColor = (placement: any): string => {
     switch (placement) {
       case "WIN":
         return "bg-yellow-500 text-white"
+      case "TOP2":
+        return "bg-gradient-to-r from-gray-300 to-gray-400 text-white shadow-sm" // Silver color for legacy format runner-up
       case "HIGH":
         return "bg-blue-500 text-white"
       case "SAFE":
@@ -220,6 +253,12 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
         return "bg-red-500 text-white"
       case "ELIM":
         return "bg-gray-800 text-white"
+      case "WINNER":
+        return "bg-yellow-400 text-black font-bold"
+      case "3RD":
+        return "bg-amber-600 text-white"
+      case "4TH":
+        return "bg-gray-500 text-white"
       default:
         return "bg-gray-300"
     }
@@ -245,13 +284,49 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
         setCurrentStep("runway-performance");
         break
       case "challenge-performance":
-        setCurrentStep("runway-performance")
+        setCurrentStep("runway-performance");
         break
       case "runway-performance":
-        setCurrentStep("deliberation")
+        setCurrentStep("deliberation");
+        break
+      case "winner-announcement":
+        if (seasonFormat === "legacy") {
+          // In legacy mode, after winner announcement go to bottom announcement
+          setCurrentStep("bottom-announcement")
+        } else {
+          setCurrentStep("bottom-announcement")
+        }
+        break
+      case "bottom-announcement":
+        if (seasonFormat === "legacy") {
+          setTopTwoQueens(currentEpisode?.top2 || [])
+          setBottomQueens(currentEpisode?.bottom2 || [])
+          setCurrentStep("safe-announcement")
+        } else {
+          setCurrentStep("safe-announcement")
+        }
+        break
+      case "top-two-announcement":
+        setCurrentStep("legacy-lipsync")
+        break
+      case "legacy-lipsync":
+        if (currentEpisode) {
+          setLegacyLipSyncWinner(currentEpisode.winner || "")
+          setLipstickChoices(currentEpisode.lipstickChoices || {})
+          setLoserChoice(currentEpisode.loserWouldHaveChosen || "")
+        }
+        setCurrentStep("lipstick-selection")
+        break
+      case "lipstick-selection":
+        setCurrentStep("elimination")
         break
       case "deliberation":
-        setCurrentStep("winner-announcement")
+        if (seasonFormat === "legacy") {
+          // For legacy format, skip winner announcement and go directly to bottom announcement
+          setCurrentStep("bottom-announcement")
+        } else {
+          setCurrentStep("winner-announcement")
+        }
         break
       case "winner-announcement":
         setCurrentStep("bottom-announcement")
@@ -260,7 +335,13 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
         setCurrentStep("safe-announcement")
         break
       case "safe-announcement":
-        setCurrentStep("lipsync")
+        if (seasonFormat === "legacy") {
+          // In legacy format, we need to announce the top 2 queens
+          setCurrentStep("top-two-announcement")
+        } else {
+          // Regular format: go to lipsync
+          setCurrentStep("lipsync")
+        }
         break
       case "lipsync":
         setCurrentStep("elimination")
@@ -327,26 +408,72 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
         setCurrentStep("finale-crowning")
         break
       case "finale-crowning":
-        // Complete the season
-        const finalResult = {
-          episodes: [
-            ...allEpisodes,
-            {
-              episodeNumber: episodeNumber,
-              challenge: "Finale",
-              winner: finalWinner,
-              bottom2: [finaleFirstWinner, finaleSecondWinner],
-              lipSyncSong: finaleSongs[2] || "Final Song",
-              eliminated: "None (Finale)",
-              remaining: [finalWinner],
-              standings: {
-                [finalWinner]: 1,
-                [finaleFirstWinner === finalWinner ? finaleSecondWinner : finaleFirstWinner]: 2,
-              },
-            },
-          ],
+        // Complete the season        // Get the third and fourth placers
+        const thirdPlacer = finaleFirstPair.find((name) => name !== finaleFirstWinner) ?? "Unknown";
+        const fourthPlacer = finaleSecondPair.find((name) => name !== finaleSecondWinner) ?? "Unknown";
+        const runnerUp = finaleFirstWinner === finalWinner ? finaleSecondWinner : finaleFirstWinner;
+
+        // Log information for debugging
+        console.log("Finale results:", {
           winner: finalWinner,
-          finalFour: remainingQueens.map((q) => q.name),
+          runnerUp: runnerUp,
+          thirdPlacer: thirdPlacer,
+          fourthPlacer: fourthPlacer,
+          firstPair: finaleFirstPair,
+          secondPair: finaleSecondPair,
+          firstWinner: finaleFirstWinner,
+          secondWinner: finaleSecondWinner
+        });
+          // Create a properly structured finale episode that includes all finalists
+        const finaleEpisode = {
+          episodeNumber: episodeNumber,
+          challenge: "Finale",
+          winner: finalWinner,
+          bottom2: [finaleFirstWinner, finaleSecondWinner], // This represents the top 2 finalists
+          lipSyncSong: finaleSongs[2] || "Final Song",
+          lipSyncSongId: "", // Add this to avoid undefined errors
+          eliminated: "None (Finale)",          remaining: [finalWinner],
+          high: [],
+          low: "",
+          challengeScores: {},
+          runwayScores: {},
+          standings: {
+            [finalWinner as string]: 1,
+            [runnerUp as string]: 2,
+            [thirdPlacer as string]: 3,
+            [fourthPlacer as string]: 4
+          },
+          details: {
+            challengeScores: {},
+            runwayScores: {},
+            riskTaking: {},
+            pressureState: {},
+            lipSyncScores: {
+              [finalWinner]: 9.5, // Winner score
+              [runnerUp]: 8.8,    // Runner-up score 
+              [thirdPlacer]: 7.8, // Third place score
+              [fourthPlacer]: 7.5 // Fourth place score
+            },
+            placements: {
+              [finalWinner]: "WINNER",
+              [runnerUp]: "TOP2",
+              [thirdPlacer]: "3RD",
+              [fourthPlacer]: "4TH"
+            }
+          }
+        };        // Create the final result with correctly formatted data for the track record
+        // Important: In quick mode, we need to ensure this finale episode is properly constructed
+        const finalResult = {
+          episodes: [...allEpisodes, finaleEpisode],
+          winner: finalWinner,
+          finalFour: [finalWinner, runnerUp, thirdPlacer, fourthPlacer],
+          runnerUp: runnerUp,
+          placements: {
+            [finalWinner as string]: "WINNER",
+            [runnerUp as string]: "TOP2",
+            [thirdPlacer as string]: "3RD",
+            [fourthPlacer as string]: "4TH"
+          }
         }
         onComplete(finalResult)
         break
@@ -389,21 +516,40 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
       generateEpisode()
     }
   }, [currentStep, currentEpisode])
-
   const startFinale = () => {
     // Add current episode to allEpisodes before starting finale
     if (currentEpisode) {
       setAllEpisodes([...allEpisodes, currentEpisode])
     }
 
-    // Update remaining queens for finale
-    const finalFourQueens = remainingQueens.filter((q) => q.name !== currentEpisode?.eliminated)
-    setRemainingQueens(finalFourQueens)
+    // Ensure we're using exactly the top 4 queens for the finale
+    let finalFourQueens = [...remainingQueens];
+    
+    // Filter out the eliminated queen from the current episode if needed
+    if (currentEpisode?.eliminated) {
+      finalFourQueens = finalFourQueens.filter((q) => q.name !== currentEpisode.eliminated);
+    }
+    
+    // If we have more than 4 queens, filter to just the top 4
+    // This can happen when skipToFinale is triggered but some elimination logic isn't completed
+    if (finalFourQueens.length > 4) {
+      console.log("More than 4 queens detected for finale, filtering to top 4");
+      finalFourQueens = finalFourQueens.slice(0, 4);
+    }
+    
+    // If we somehow have less than 4, log an error but continue 
+    // (this shouldn't happen but we want to be robust)
+    if (finalFourQueens.length < 4) {
+      console.error("Less than 4 queens available for finale:", finalFourQueens.map(q => q.name));
+    }
+    
+    // Update remaining queens to be exactly our finalists
+    setRemainingQueens(finalFourQueens);
 
     // Randomly select pairs for finale lip syncs
     const shuffledQueens = [...finalFourQueens].sort(() => Math.random() - 0.5)
-    const firstPair = [shuffledQueens[0].name, shuffledQueens[1].name]
-    const secondPair = [shuffledQueens[2].name, shuffledQueens[3].name]
+    const firstPair = [shuffledQueens[0]?.name || "Unknown", shuffledQueens[1]?.name || "Unknown"]
+    const secondPair = [shuffledQueens[2]?.name || "Unknown", shuffledQueens[3]?.name || "Unknown"]
 
     setFinaleFirstPair(firstPair)
     setFinaleSecondPair(secondPair)
@@ -481,14 +627,17 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
           let type: RelationshipType = "neutral";
           const loyaltyDiff = Math.abs(queen.loyalty - targetQueen.loyalty);
           const congenialityDiff = Math.abs(queen.congeniality - targetQueen.congeniality);
-          
-          // Queens with similar values are more likely to form alliances
+            // Queens with similar values are more likely to form alliances
           if (loyaltyDiff < 3 && congenialityDiff < 3 && Math.random() < 0.7) {
             type = "alliance";
           } 
-          // Queens with very different values might become enemies
+          // Queens with very different values might become rivals or be in conflict
           else if ((loyaltyDiff > 5 || congenialityDiff > 5) && Math.random() < 0.6) {
-            type = "enemy";
+            type = Math.random() < 0.5 ? "rivalry" : "conflict";
+          } 
+          // Queens with moderate differences might become friends
+          else if (Math.random() < 0.3) {
+            type = "friendship";
           }
           // Otherwise neutral
           
@@ -527,9 +676,18 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
     setNewRelationships(newRels);
   };
   
-    // Count the number of wins a queen has had in previous episodes
+  // Count the number of wins a queen has had in previous episodes
+  // This includes both regular wins and TOP2 placements (which count as wins for production bias)
   const getQueenWinCount = (queenName: string): number => {
-    return allEpisodes.filter(episode => episode.winner === queenName).length;
+    return allEpisodes.filter(episode => {
+      // Count regular wins
+      if (episode.winner === queenName) return true;
+      
+      // Count TOP2 placements as wins for production bias purposes
+      if (episode.details?.placements?.[queenName] === "TOP2") return true;
+      
+      return false;
+    }).length;
   }
 
   const simulateLipSync = (queen1: Queen, queen2: Queen, isFinale: boolean = false): Queen => {
@@ -726,10 +884,9 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
     const remainingAvailableQueens = availableQueens.filter(
       q => !captains.includes(q.name)
     );
-    
-    // Alternate selection based on relationship preferences and congeniality
+      // Alternate selection based on relationship preferences and congeniality
     let currentCaptain = 0;
-    setCurrentPicking(captains[currentCaptain]);
+    let pickedCaptain = captains[currentCaptain]; // Local tracking variable
     
     while (remainingAvailableQueens.length > 0) {
       const captain = captains[currentCaptain];
@@ -741,14 +898,13 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
       // Score remaining queens based on relationships and stats
       const scoredQueens = remainingAvailableQueens.map(queen => {
         let score = 0;
-        
-        // Relationship score
+          // Relationship score
         if (captainRelationships[queen.name]) {
           const rel = captainRelationships[queen.name];
-          if (rel.type === "alliance") {
-            score += rel.strength * 2; // Strong preference for allies
-          } else if (rel.type === "enemy") {
-            score -= rel.strength * 2; // Strong avoidance for enemies
+          if (rel.type === "alliance" || rel.type === "friendship") {
+            score += rel.strength * 2; // Strong preference for allies and friends
+          } else if (rel.type === "rivalry" || rel.type === "conflict") {
+            score -= rel.strength * 2; // Strong avoidance for rivals and conflicts
           }
         }
         
@@ -776,10 +932,9 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
       const newRemainingQueens = remainingAvailableQueens.filter(
         q => q.name !== selectedQueen.name
       );
-      
-      // Update for next iteration
+        // Update for next iteration
       currentCaptain = (currentCaptain + 1) % 2;
-      setCurrentPicking(captains[currentCaptain]);
+      pickedCaptain = captains[currentCaptain]; // Update local variable
       
       // If we've processed all queens, exit loop
       if (newRemainingQueens.length === 0) break;
@@ -787,9 +942,11 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
       // Update the remaining queens
       remainingAvailableQueens.splice(0, remainingAvailableQueens.length, ...newRemainingQueens);
     }
-    
-    // Save the final groups
+      // Save the final groups
     setGirlGroups(groups);
+    
+    // Set the current picking captain at the end, after all calculations
+    setCurrentPicking(pickedCaptain);
     
     // Update the episode data with the group information
     if (currentEpisode) {
@@ -1076,7 +1233,15 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
 
       case "deliberation":
         // Combine tops and bottoms into one shuffled array
-        const potentialTops = [currentEpisode?.winner, ...(currentEpisode?.high || [])]
+        // Include top2 if mode is legacy format, but not if normal mode
+        const potentialTops = [...(currentEpisode?.high || [])]
+
+        if (seasonFormat === "legacy") {
+          potentialTops.push(...(currentEpisode?.top2 || []))
+        } else if (seasonFormat === "regular") {
+          potentialTops.push(currentEpisode?.winner || ""); // Include winner only if not legacy format
+        }
+        
         const potentialBottoms = [currentEpisode?.low, ...(currentEpisode?.bottom2 || [])]
         const allCritiqued = [...potentialTops, ...potentialBottoms].sort(() => Math.random() - 0.5)
 
@@ -1299,56 +1464,378 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
                   )
                 })}
               </div>
+            </CardContent>          </Card>
+        );      case "top-two-announcement":
+        if (!currentEpisode) return null;
+        return (
+          <Card className="bg-gradient-to-br from-yellow-400 via-yellow-500 to-gold-600 text-white shadow-2xl">
+            <CardHeader className="text-center pb-4">
+              <div className="flex justify-center mb-4">
+                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
+                  <Crown className="w-8 h-8 text-yellow-200" />
+                </div>
+              </div>
+              <CardTitle className="text-3xl font-bold">Top Two of the Week</CardTitle>
+              <CardDescription className="text-yellow-100 text-lg font-medium">
+                "Condragulations! You are the top two queens of the week!"
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center space-y-6">
+              {/* Show high queens first */}
+              {currentEpisode.high && currentEpisode.high.length > 0 && (
+                <div className="bg-white/10 rounded-xl p-4 mb-6">
+                  <h3 className="text-xl font-semibold mb-4 text-yellow-200">High Performers</h3>
+                  <div className="flex justify-center gap-4">
+                    {currentEpisode.high.map((queenName) => {
+                      const queen = remainingQueens.find((q) => q.name === queenName);
+                      return (
+                        <div key={queenName} className="flex flex-col items-center">
+                          <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-yellow-200 mb-2">
+                            <img
+                              src={
+                                queen?.imageUrl ||
+                                `/placeholder.svg?height=64&width=64&text=${encodeURIComponent(queenName?.charAt(0) || "Q")}`
+                              }
+                              alt={queenName}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <p className="text-sm font-medium">{queenName}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              
+              {/* Top 2 Queens */}
+              <div className="grid grid-cols-2 gap-8 my-8">
+                {currentEpisode.top2?.map((queenName, index) => {
+                  const queen = remainingQueens.find((q) => q.name === queenName);
+                  return (
+                    <div key={queenName} className="flex flex-col items-center">
+                      <div className="relative">
+                        <div className="w-28 h-28 rounded-full overflow-hidden border-4 border-white shadow-lg mx-auto mb-4">
+                          <img
+                            src={
+                              queen?.imageUrl ||
+                              `/placeholder.svg?height=112&width=112&text=${encodeURIComponent(queenName?.charAt(0) || "Q")}`
+                            }
+                            alt={queenName}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="absolute -top-2 -right-2 w-8 h-8 bg-yellow-400 text-yellow-900 rounded-full flex items-center justify-center font-bold">
+                          {index + 1}
+                        </div>
+                      </div>
+                      <h2 className="text-2xl font-bold mb-3">{queenName}</h2>
+      
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {/* Legacy format explanation */}
+              <div className="bg-white/20 rounded-xl p-6 mt-6">
+                <div className="flex items-center justify-center mb-3">
+                  <Trophy className="w-6 h-6 mr-2" />
+                  <h3 className="text-xl font-bold">Legacy Format</h3>
+                </div>
+                <p className="text-lg leading-relaxed">
+                  "You'll lip sync for your legacy, and the winner will receive a cash tip of $10,000 
+                  and the power to eliminate one of the bottom queens."
+                </p>
+              </div>
+            
             </CardContent>
           </Card>
-        )
-
-      case "elimination":
-        const eliminatedQueen = remainingQueens.find((q) => q.name === currentEpisode?.eliminated)
-        const stayingQueen = currentEpisode?.bottom2.find((name) => name !== currentEpisode?.eliminated)
-        const stayingQueenData = remainingQueens.find((q) => q.name === stayingQueen)
-
+        );      case "legacy-lipsync":
+        if (!currentEpisode) return null;
+        // Find the full song details if available
+        const legacySongInfo = songs.find(song => {
+          const lipSyncTitle = currentEpisode?.lipSyncSong.split(" by ")[0]?.trim();
+          const lipSyncArtist = currentEpisode?.lipSyncSong.split(" by ")[1]?.trim();
+          return song.title === lipSyncTitle && song.artist === lipSyncArtist;
+        });
+        
         return (
-          <Card className="bg-gradient-to-r from-gray-800 to-black text-white">
-            <CardHeader className="text-center">
-              <CardTitle className="text-xl">The Decision</CardTitle>
+          <Card className="bg-gradient-to-br from-purple-600 via-pink-600 to-red-600 text-white shadow-2xl">
+            <CardHeader className="text-center pb-6">
+              <div className="flex justify-center mb-4">
+                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
+                  <Music className="w-8 h-8 text-pink-200" />
+                </div>
+              </div>
+              <CardTitle className="text-3xl font-bold">Lip Sync For Your Legacy</CardTitle>
+              <CardDescription className="text-purple-100 text-lg font-medium">
+                "Two queens stand before me. This is your chance to impress me and earn the power of elimination."
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-8 mb-6">
-                <div className="text-center">
-                  <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-green-500 mx-auto mb-3">
-                    <img
-                      src={
-                        stayingQueenData?.imageUrl ||
-                        `/placeholder.svg?height=80&width=80&text=${encodeURIComponent(stayingQueen?.charAt(0) || "Q")}`
-                      }
-                      alt={stayingQueen}
+            <CardContent className="space-y-6">
+              
+              {/* Song Information */}
+              <div className="text-center bg-white/10 rounded-xl p-6">
+                {legacySongInfo?.album_image ? (
+                  <div className="w-28 h-28 mx-auto mb-4 rounded-lg overflow-hidden border-4 border-pink-300 shadow-2xl">
+                    <img 
+                      src={legacySongInfo.album_image} 
+                      alt={`${legacySongInfo.title} album art`} 
                       className="w-full h-full object-cover"
                     />
                   </div>
-                  <p className="font-bold text-lg text-green-400">{stayingQueen}</p>
-                  <p className="text-green-300">Shantay you stay!</p>
+                ) : (
+                  <Music className="w-16 h-16 mx-auto mb-4 text-pink-200" />
+                )}
+                <p className="text-xl font-bold mb-2 text-pink-200">Tonight's Lip Sync Song:</p>
+                <p className="text-2xl font-bold">{currentEpisode?.lipSyncSong}</p>
+                
+                {/* Spotify preview player if available */}
+                {legacySongInfo?.preview_url && (
+                  <div className="mt-6 mx-auto max-w-[350px]">
+                    <div className="bg-white/20 rounded-full p-3">
+                      <audio 
+                        src={legacySongInfo.preview_url} 
+                        controls 
+                        className="w-full h-8"
+                        autoPlay={false}
+                      />
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setCurrentSpotifySong({
+                          title: legacySongInfo.title,
+                          artist: legacySongInfo.artist,
+                          album_image: legacySongInfo.album_image,
+                          preview_url: legacySongInfo.preview_url
+                        });
+                        setShowFloatingPlayer(true);
+                        setIsPlayerMinimized(false);
+                      }}
+                      className="mt-3 text-sm text-pink-200 hover:text-white transition-colors w-full text-center bg-white/10 rounded-lg py-2"
+                    >
+                      🎵 Keep playing in floating player
+                    </button>
+                  </div>
+                )}
+              </div>
+              
+              {/* Lip Sync Battle */}
+              <div className="grid grid-cols-2 gap-8">
+                {currentEpisode?.top2?.map((queenName, index) => {
+                  const queen = remainingQueens.find((q) => q.name === queenName);
+                  const isWinner = queenName === currentEpisode.winner;
+                  return (
+                    <div key={queenName} className={`text-center p-6 rounded-xl border-2 ${isWinner ? 'border-yellow-400 bg-yellow-500/20' : 'border-white/30 bg-white/10'} transition-all duration-300`}>
+                      <div className="relative mb-4">
+                        <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white mx-auto shadow-lg">
+                          <img
+                            src={
+                              queen?.imageUrl ||
+                              `/placeholder.svg?height=96&width=96&text=${encodeURIComponent(queenName?.charAt(0) || "Q")}`
+                            }
+                            alt={queenName}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        {isWinner && (
+                          <div className="absolute -top-2 -right-2 w-8 h-8 bg-yellow-400 text-yellow-900 rounded-full flex items-center justify-center">
+                            <Crown className="w-4 h-4" />
+                          </div>
+                        )}
+                      </div>
+                      
+                      <p className="font-bold text-xl mb-3">{queenName}</p>
+                      
+                      <div className="space-y-2 mb-4">
+                        <p className="text-sm text-pink-100 leading-relaxed">
+                          {isWinner ? 
+                            `Delivers an unforgettable performance, commanding the stage with precision, passion, and undeniable charisma.` :
+                            `Gives a strong performance but struggles to fully capture the essence and energy of the song.`}
+                        </p>
+                      </div>
+                      
+                      {isWinner && (
+                        <div className="space-y-2">
+                          <Badge className="bg-yellow-400 text-black font-bold px-3 py-1">WINNER</Badge>
+                          <p className="text-sm text-yellow-200">💰 Wins $10,000 + Elimination Power</p>
+                        </div>
+                      )}
+                      
+                      {!isWinner && (
+                        <Badge className="bg-gray-400 text-white font-bold px-3 py-1">TOP2</Badge>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {/* Winner Announcement */}
+              <div className="text-center bg-gradient-to-r from-yellow-500/30 to-gold-500/30 rounded-xl p-6 border border-yellow-400/50">
+                <div className="flex items-center justify-center mb-3">
+                  <Crown className="w-6 h-6 mr-2 text-yellow-400" />
+                  <p className="text-2xl font-bold text-yellow-200">
+                    {currentEpisode.winner}, you're a winner baby!
+                  </p>
                 </div>
-                <div className="text-center">
-                  <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-red-500 mx-auto mb-3 opacity-75">
+                <p className="text-lg text-yellow-100">
+                  With great power comes great responsibility...
+                </p>
+              </div>
+            
+            </CardContent>
+          </Card>
+        );case "lipstick-selection":
+        if (!currentEpisode) return null;
+        
+        // Check if decision was based primarily on track record or relationships
+        const decisionCriteria = () => {
+          const eliminatedQueen = currentEpisode.eliminated;
+          const bottomQueens = currentEpisode.bottom2 || [];
+          
+          // Check if there are any relationships between winner and bottom queens
+          const winnerRelationships = relationships[currentEpisode.winner] || {};
+            // Check for negative relationships (rivalry/conflict) with eliminated queen
+          const hasNegativeRelationship = winnerRelationships[eliminatedQueen]?.type === 'rivalry' || 
+                                         winnerRelationships[eliminatedQueen]?.type === 'conflict';
+          
+          // Check for positive relationships (alliance/friendship) with saved queen
+          const savedQueen = bottomQueens.find(queen => queen !== eliminatedQueen);
+          const hasPositiveRelationship = savedQueen && 
+                                        (winnerRelationships[savedQueen]?.type === 'alliance' || 
+                                         winnerRelationships[savedQueen]?.type === 'friendship');
+          
+          // If there's a strong relationship influence, return "relationship-based"
+          if (hasNegativeRelationship || hasPositiveRelationship) {
+            return "relationship-based";
+          }
+          
+          // Otherwise, assume it was based on challenge performance
+          return "track-record-based";
+        };
+        
+        const decision = decisionCriteria();
+        const eliminatedQueen = remainingQueens.find(q => q.name === currentEpisode.eliminated);
+        const winnerQueen = remainingQueens.find(q => q.name === currentEpisode.winner);
+        const loserQueen = remainingQueens.find(q => q.name === currentEpisode.top2?.find(queen => queen !== currentEpisode.winner));
+        const savedQueen = remainingQueens.find(q => q.name === currentEpisode.bottom2?.find(queen => queen !== currentEpisode.eliminated));
+        
+        return (
+          <Card className="bg-gradient-to-br from-red-700 via-purple-800 to-black text-white shadow-2xl">
+            <CardHeader className="text-center pb-6">
+              <div className="flex justify-center mb-4">
+                <div className="w-16 h-16 bg-red-500/30 rounded-full flex items-center justify-center">
+                  <X className="w-8 h-8 text-red-300" />
+                </div>
+              </div>
+              <CardTitle className="text-3xl font-bold">The Elimination Decision</CardTitle>
+              <CardDescription className="text-pink-100 text-lg">
+                "The time has come for you to reveal which queen you have chosen to eliminate..."
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center space-y-6">
+              
+              {/* Winner Section */}
+              <div className="bg-gradient-to-r from-yellow-500/20 to-gold-500/20 rounded-xl p-6 mb-8">
+                <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-yellow-400 mx-auto mb-4 shadow-lg">
+                  <img
+                    src={
+                      winnerQueen?.imageUrl ||
+                      `/placeholder.svg?height=128&width=128&text=${encodeURIComponent(currentEpisode.winner?.charAt(0) || "Q")}`
+                    }
+                    alt={currentEpisode.winner}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="text-xl font-medium mb-3 text-yellow-200">
+                  "{currentEpisode.winner}, with great power comes great responsibility."
+                </div>
+                <div className="text-lg text-yellow-100 mb-4">
+                  "Which queen have you chosen to eliminate?"
+                </div>
+                
+                {/* Decision Criteria Indicator */}
+                <Badge className={`text-white text-sm ${decision === "relationship-based" ? "bg-pink-600" : "bg-blue-600"}`}>
+                  {decision === "relationship-based" 
+                    ? "🤝 Decision influenced by relationships" 
+                    : "📊 Decision based on challenge performance"}
+                </Badge>
+              </div>
+              
+              {/* Elimination Reveal */}
+              <div className="bg-gradient-to-r from-red-600/30 to-red-800/30 rounded-xl p-8 border border-red-500/50">
+                <div className="text-2xl font-bold mb-4 text-red-300">
+                  "I've chosen to eliminate..."
+                </div>
+                
+                {/* Eliminated Queen */}
+                <div className="flex flex-col items-center mb-6">
+                  <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-red-400 mb-4 shadow-lg grayscale">
                     <img
                       src={
                         eliminatedQueen?.imageUrl ||
-                        `/placeholder.svg?height=80&width=80&text=${encodeURIComponent(
-                          currentEpisode?.eliminated?.charAt(0) || "Q",
-                        )}`
+                        `/placeholder.svg?height=96&width=96&text=${encodeURIComponent(currentEpisode.eliminated?.charAt(0) || "Q")}`
                       }
-                      alt={currentEpisode?.eliminated}
+                      alt={currentEpisode.eliminated}
                       className="w-full h-full object-cover"
                     />
                   </div>
-                  <p className="font-bold text-lg text-red-400">{currentEpisode?.eliminated}</p>
-                  <p className="text-red-300">Sashay away...</p>
+                  <div className="text-4xl font-bold text-red-400 mb-2">
+                    {currentEpisode.eliminated}
+                  </div>
+                  <Badge className="bg-red-600 text-white">ELIMINATED</Badge>
                 </div>
               </div>
-              <div className="text-center bg-white/10 rounded-lg p-4">
-                <p className="text-sm">"{currentEpisode?.eliminated}, you are a star. Now, sashay away."</p>
-              </div>
+              
+              {/* Show what the other queen would have chosen */}
+              {currentEpisode.loserWouldHaveChosen && loserQueen && (
+                <div className="bg-white/10 rounded-xl p-6 border border-white/20">
+                  <h3 className="text-lg font-semibold mb-4 text-purple-200">Alternative Choice</h3>
+                  <div className="flex items-center justify-center gap-4">
+                    <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/40">
+                      <img
+                        src={
+                          loserQueen?.imageUrl ||
+                          `/placeholder.svg?height=48&width=48&text=${encodeURIComponent(loserQueen?.name?.charAt(0) || "Q")}`
+                        }
+                        alt={loserQueen?.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg italic text-purple-100">
+                        "{currentEpisode.loserWouldHaveChosen === currentEpisode.eliminated 
+                          ? `I would have chosen the same queen.`
+                          : `I would have chosen ${currentEpisode.loserWouldHaveChosen}.`}" 
+                      </p>
+                      <p className="text-sm text-purple-300 mt-1">- {loserQueen?.name}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Show saved queen */}
+              {savedQueen && (
+                <div className="bg-green-600/20 rounded-xl p-4 border border-green-500/30">
+                  <h3 className="text-lg font-semibold mb-3 text-green-200">Safe This Week</h3>
+                  <div className="flex items-center justify-center gap-3">
+                    <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-green-400">
+                      <img
+                        src={
+                          savedQueen?.imageUrl ||
+                          `/placeholder.svg?height=64&width=64&text=${encodeURIComponent(savedQueen?.name?.charAt(0) || "Q")}`
+                        }
+                        alt={savedQueen?.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-lg font-medium text-green-100">{savedQueen?.name}</p>
+                      <Badge className="bg-green-600 text-white">SAVED</Badge>
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )
@@ -1367,10 +1854,9 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
                 <div className="space-y-4">
                   {newRelationships.map((rel, index) => {
                     const queen1 = remainingQueens.find(q => q.name === rel.queen1);
-                    const queen2 = remainingQueens.find(q => q.name === rel.queen2);
-                    const relationshipColor = 
+                    const queen2 = remainingQueens.find(q => q.name === rel.queen2);                    const relationshipColor = 
                       rel.type === "alliance" ? "bg-green-500" : 
-                      rel.type === "enemy" ? "bg-red-500" : 
+                      (rel.type === "rivalry" || rel.type === "conflict") ? "bg-red-500" : 
                       "bg-blue-500";
                     
                     return (
@@ -1403,17 +1889,16 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
                             </div>
                           </div>
                           
-                          <div className="flex-1">
-                            <p className="font-medium">
+                          <div className="flex-1">                            <p className="font-medium">
                               <span className="font-bold">{rel.queen1}</span> and <span className="font-bold">{rel.queen2}</span> have formed a {" "}
                               <Badge className={`${relationshipColor}`}>
-                                {rel.type === "alliance" ? "friendship" : rel.type === "enemy" ? "rivalry" : "connection"}
+                                {rel.type === "alliance" ? "friendship" : (rel.type === "rivalry" || rel.type === "conflict") ? "rivalry" : "connection"}
                               </Badge>
                             </p>
                             <p className="text-sm text-purple-100 mt-1">
                               {rel.type === "alliance" 
                                 ? "They seem to have bonded in the Werk Room and might support each other going forward." 
-                                : rel.type === "enemy" 
+                                : (rel.type === "rivalry" || rel.type === "conflict")
                                 ? "There's some tension between them that could lead to drama in future episodes."
                                 : "They've been getting to know each other better after this week's challenge."}
                             </p>
@@ -1480,40 +1965,12 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
                                 alt={queenName}
                                 className="w-full h-full object-cover"
                               />
+                            </div>                            <div className="flex-1">
+                              <p className="font-medium">{queenName}</p>
+                              <Badge className={`text-sm ${getPlacementColor(placement)}`}>
+                                {placement as string}
+                              </Badge>
                             </div>
-                            <div className="flex-1">
-                              <p className="font-medium text-sm">{queenName}</p>
-                            </div>
-                            <Badge className={`${getPlacementColor(placement)} text-xs font-bold`}>{String(placement)}</Badge>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Final Rankings */}
-                  <div className="mb-4">
-                    <h4 className="font-medium mb-3">Final Rankings (Combined Score)</h4>
-                    <div className="space-y-2">
-                      {combinedScores.map(({ queenName, combinedScore }, index) => {
-                        const queen = remainingQueens.find((q) => q.name === queenName)
-                        return (
-                          <div key={queenName} className="flex items-center gap-3 p-2 border rounded">
-                            <div className="w-6 h-6 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center text-white text-sm font-bold">
-                              {index + 1}
-                            </div>
-                            <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-200">
-                              <img
-                                src={
-                                  queen?.imageUrl ||
-                                  `/placeholder.svg?height=32&width=32&text=${encodeURIComponent(queenName?.charAt(0) || "Q")}`
-                                }
-                                alt={queenName}
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
-                            <span className="flex-1 font-medium">{queenName}</span>
-                            <Badge className="bg-purple-500 text-white">{combinedScore.toFixed(1)}</Badge>
                           </div>
                         )
                       })}
@@ -2081,7 +2538,7 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
                           className="w-full h-full object-cover rounded-full"
                         />
                         {winCount > 0 && (
-                          <div className="absolute -bottom-1 -right-1 bg-yellow-500 rounded-full w-10 h-10 flex items-center justify-center border-2 border-white text-white font-bold z-30 shadow-md">
+                          <div className="absolute -bottom-1 -right-1 bg-yellow-500 rounded-full w-10 h-10 flex items-center justify-center border-2 border-white text-white text-xs font-bold z-30 shadow-md">
                             {winCount}
                           </div>
                         )}
@@ -2089,7 +2546,7 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
                       <p className="font-bold text-2xl">{queenName}</p>
                       <p className="text-yellow-200">
                         {winCount > 0 ? 
-                          `${winCount} win${winCount !== 1 ? 's' : ''} this season` : 
+                          `${winCount} Challenge ${winCount === 1 ? 'Win' : 'Wins'}` : 
                           'Fighting for the crown'}
                       </p>
                     </div>
@@ -2121,14 +2578,13 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
           challenge: "Finale",
           winner: finalWinner,
           bottom2: [finaleFirstWinner, finaleSecondWinner],
-          lipSyncSong: finaleSongs[2] || "Final Song",
-          eliminated: "None (Finale)",
+          lipSyncSong: finaleSongs[2] || "Final Song",          eliminated: "None (Finale)",
           remaining: [finalWinner],
           standings: {
-            [finalWinner]: 1,
-            [finaleFirstWinner === finalWinner ? finaleSecondWinner : finaleFirstWinner]: 2,
-            [thirdPlacer]: 3,
-            [fourthPlacer]: 4
+            [finalWinner as string]: 1,
+            [runnerUp as string]: 2,
+            [thirdPlacer as string]: 3,
+            [fourthPlacer as string]: 4
           },
           details: {
             challengeScores: {},
@@ -2136,16 +2592,16 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
             riskTaking: {},
             pressureState: {},
             lipSyncScores: {
-              [finaleFirstWinner]: 8.8,
-              [finaleSecondWinner]: 8.7,
-              [thirdPlacer]: 8.0,
-              [fourthPlacer]: 7.5
+              [finalWinner as string]: 8.8,
+              [runnerUp as string]: 8.7,
+              [thirdPlacer as string]: 8.0,
+              [fourthPlacer as string]: 7.5
             },
             placements: {
-              [finalWinner]: "WINNER",
-              [finaleFirstWinner === finalWinner ? finaleSecondWinner : finaleFirstWinner]: "TOP2",
-              [thirdPlacer]: "3RD",
-              [fourthPlacer]: "4TH",
+              [finalWinner as string]: "WINNER",
+              [runnerUp as string]: "TOP2",
+              [thirdPlacer as string]: "3RD",
+              [fourthPlacer as string]: "4TH",
             },
           },
         }
@@ -2182,9 +2638,6 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
                                 alt={finalWinner}
                                 className="w-full h-full object-cover rounded-full border-4 border-white relative z-10"
                               />
-                              <div className="absolute -top-10 left-1/2 -translate-x-1/2 z-20">
-                                <Crown className="w-12 h-12 text-yellow-400 drop-shadow-md" />
-                              </div>
                             </div>
                           ) : (
                             <div className="relative w-64 h-64 flex items-center justify-center">
@@ -2466,75 +2919,17 @@ export function NarrativeSimulation({ queens, songs, onComplete }: NarrativeSimu
         return null
     }
   }
-
   return (
     <div className="space-y-6">
-      {renderStep()}
-      {currentStep !== "episode-complete" && currentStep !== "finale-crowning" && (
-        <div className="text-center">
-          <Button onClick={nextStep} size="lg" className="bg-pink-500 hover:bg-pink-600">
-            Next
-            <ChevronRight className="w-4 h-4 ml-2" />
+      {renderStep()}      {currentStep !== "episode-complete" && currentStep !== "finale-crowning" && (
+        <div className="flex justify-center items-center mt-8">
+          <Button onClick={nextStep} className="px-12 py-3 text-lg w-1/3 mx-auto">
+            {isLoading ? (
+              <div className="w-6 h-6 border-2 border-t-transparent border-white rounded-full animate-spin"></div>
+            ) : (
+              <>Next</>
+            )}
           </Button>
-        </div>
-      )}
-      
-      {/* Floating Spotify Player */}
-      {showFloatingPlayer && currentSpotifySong?.preview_url && (
-        <div 
-          className={`fixed ${isPlayerMinimized ? 'bottom-4 right-4 w-12 h-12' : 'bottom-4 right-4 sm:w-72 w-64'} 
-            bg-gradient-to-r from-purple-800 to-pink-600 rounded-lg shadow-lg z-50 transition-all duration-300 ease-in-out`}
-        >
-          {isPlayerMinimized ? (
-            <div className="h-full w-full flex items-center justify-center cursor-pointer" onClick={() => setIsPlayerMinimized(false)}>
-              <Music className="text-white h-6 w-6" />
-            </div>
-          ) : (
-            <div className="p-3 relative">
-              <div className="flex items-center mb-2">
-                {currentSpotifySong.album_image ? (
-                  <div className="w-12 h-12 rounded overflow-hidden border border-pink-300 mr-4 p-0.5 bg-gradient-to-br from-purple-900/50 to-pink-900/50">
-                    <img 
-                      src={currentSpotifySong.album_image} 
-                      alt={`${currentSpotifySong.title} album art`} 
-                      className="w-full h-full object-cover rounded"
-                    />
-                  </div>
-                ) : (
-                  <div className="w-12 h-12 flex items-center justify-center mr-4">
-                    <Music className="w-8 h-8 text-pink-300" />
-                  </div>
-                )}
-                <div className="flex-1 overflow-hidden">
-                  <p className="text-white text-sm truncate font-bold">{currentSpotifySong.title}</p>
-                  <p className="text-pink-200 text-xs truncate">{currentSpotifySong.artist}</p>
-                </div>
-                <button 
-                  onClick={() => setIsPlayerMinimized(true)} 
-                  className="text-white hover:text-pink-200 transition-colors ml-2"
-                >
-                  <Minimize2 className="h-4 w-4" />
-                </button>
-                <button 
-                  onClick={() => setShowFloatingPlayer(false)} 
-                  className="text-white hover:text-pink-200 transition-colors ml-1"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              
-              <audio 
-                src={currentSpotifySong.preview_url} 
-                controls 
-                className="w-full h-8 rounded-full"
-                controlsList="nodownload"
-              />
-              
-              <div className="mt-1 text-center">
-                <p className="text-white/70 text-xs">Imported from Spotify</p>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>

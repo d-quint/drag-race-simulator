@@ -1,32 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
-
-interface Queen {
-  id: string
-  name: string
-  imageUrl?: string
-  congeniality: number
-  loyalty: number
-  novelty: number
-  conceptualDepth: number
-  riskTolerance: number
-  conflictResilience: number
-  designVision: number
-  comedyChops: number
-  lipSyncProwess: number
-  runwayPresence: number
-  actingAbility: number
-  vocalMusicality: number
-  versatility: number
-  adaptability: number
-  starPower: number
-}
-
-interface Song {
-  id: string
-  title: string
-  artist: string
-  genre: string
-}
+import { RelationshipManager, RelationshipMap } from "@/lib/relationship-manager"
+import { Queen, Song } from "@/lib/types"
 
 const challenges = [
   "Design Challenge",
@@ -256,6 +230,76 @@ function simulateLipSync(queen1: Queen, queen2: Queen, bottomCounts: {[key: stri
   return score1 > score2 ? queen1 : queen2
 }
 
+// Function to calculate which bottom queen a top queen would eliminate
+function calculateLipstickChoice(
+  topQueen: Queen, 
+  bottomQueens: Queen[],
+  episodeScores: {[queenName: string]: number},
+  relationships?: {[queenName: string]: {[queenName: string]: any}}
+): string {
+  // Base scores for bottom queens - higher means more likely to eliminate
+  const scoreMap: {[queenName: string]: number} = {}
+  
+  for (const bottomQueen of bottomQueens) {
+    let score = 0
+    
+    // 1. Performance in this episode (70% base weight)
+    // Worse performance = higher elimination chance
+    const performanceScore = 10 - (episodeScores[bottomQueen.name] || 5)
+    score += performanceScore * 7
+    
+    // 2. Strategy factor - congeniality vs strategy
+    if (topQueen.congeniality < 5 && topQueen.conflictResilience > 7) {
+      // Strategic queens may eliminate stronger competitors
+      const competitorStrength = bottomQueen.starPower * 0.4 + 
+        bottomQueen.versatility * 0.3 + 
+        bottomQueen.adaptability * 0.3
+      score += competitorStrength * 5
+    }
+    
+    // 3. Relationship factor
+    if (relationships && relationships[topQueen.name] && relationships[topQueen.name][bottomQueen.name]) {
+      const relationship = relationships[topQueen.name][bottomQueen.name]
+      
+      if (relationship.type === "alliance" || relationship.type === "friendship") {
+        // Alliances protect queens (subtract from score)
+        const protectionFactor = relationship.strength * 10 * (topQueen.loyalty / 10)
+        score -= protectionFactor
+      } else if (relationship.type === "rivalry" || relationship.type === "conflict") {
+        // Rivalries increase elimination chance
+        const rivalryFactor = relationship.strength * 10 * ((10 - topQueen.congeniality) / 10)
+        score += rivalryFactor
+      }
+    }
+    
+    // Store the score
+    scoreMap[bottomQueen.name] = score
+  }
+  
+  // Find the queen with the highest elimination score
+  let highestScore = -1
+  let chosenQueen = ""
+  
+  for (const [queenName, score] of Object.entries(scoreMap)) {
+    if (score > highestScore) {
+      highestScore = score
+      chosenQueen = queenName
+    }
+  }
+  
+  return chosenQueen || bottomQueens[0].name
+}
+
+// Legacy format lipsync function
+function simulateLegacyLipSync(queen1: Queen, queen2: Queen): Queen {
+  // Use the same comprehensive scoring system as regular lip syncs
+  // In legacy format, top 2 queens typically haven't been in the bottom before, so bottomCount = 0
+  const queen1Score = calculateLipSyncScore(queen1, 0)
+  const queen2Score = calculateLipSyncScore(queen2, 0)
+  
+  return queen1Score > queen2Score ? queen1 : queen2
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { 
@@ -263,13 +307,17 @@ export async function POST(request: NextRequest) {
       songs, 
       episodeNumber, 
       usedChallenges = [], 
-      usedSongs = [] 
+      usedSongs = [],
+      seasonFormat = "regular",
+      relationships = {}
     }: { 
       queens: Queen[]; 
       songs: Song[]; 
       episodeNumber: number; 
       usedChallenges?: string[];
       usedSongs?: string[];
+      seasonFormat?: "regular" | "legacy";
+      relationships?: RelationshipMap;
     } = await request.json()
 
     if (queens.length < 4) {
@@ -421,33 +469,141 @@ export async function POST(request: NextRequest) {
     const lipSyncScores: { [queenName: string]: number } = {}
     bottom2QueenObjects.forEach((queen) => {
       lipSyncScores[queen.name] = calculateLipSyncScore(queen, bottomCounts[queen.name] || 0)
-    })
-
-    // Create detailed episode data
-    const episodeData = {
-      episodeNumber,
-      challenge: challengeType,
-      challengeScores,
-      runwayScores,
-      winner: winnerName,
-      high: highQueens,
-      low: lowQueen,
-      bottom2: bottom2Queens,
-      lipSyncSong: `${selectedSong.title} by ${selectedSong.artist}`,
-      lipSyncSongId: selectedSong.id, // Add the song ID for tracking
-      eliminated: eliminated.name,
-      remaining,
-      details: {
+    })    // Handle different formats
+    if (seasonFormat === "legacy") {
+      // For legacy format, top 2 queens lip sync for their legacy
+      const top2QueenObjects = [scores[0].queen, scores[1].queen]
+      const top2Names = top2QueenObjects.map(q => q.name)
+      
+      // Get bottom queens
+      const bottomQueenObjects = [
+        scores[scores.length - 1].queen,
+        scores[scores.length - 2].queen
+      ]
+      const bottomNames = bottomQueenObjects.map(q => q.name)
+      
+      // Legacy lipsync
+      const legacyLipSyncWinner = simulateLegacyLipSync(top2QueenObjects[0], top2QueenObjects[1])
+      const legacyLipSyncLoser = top2QueenObjects.find(q => q.id !== legacyLipSyncWinner.id)!
+      
+      // Calculate which queen each top queen would eliminate
+      const lipstickChoices: {[queenName: string]: string} = {}
+      
+      top2QueenObjects.forEach(queen => {
+        lipstickChoices[queen.name] = calculateLipstickChoice(
+          queen,
+          bottomQueenObjects,
+          challengeScores,
+          relationships
+        )
+      })
+      
+      // The winner chooses who to eliminate
+      const eliminated = lipstickChoices[legacyLipSyncWinner.name]
+      const saved = bottomNames.find(name => name !== eliminated)!
+      const remaining = queens.filter(q => q.name !== eliminated).map(q => q.name)
+      
+      // Initialize or use the relationship manager
+      let relationshipManager: RelationshipManager;
+      
+      if (Object.keys(relationships).length > 0) {
+        // If relationships data exists, create manager with existing data
+        relationshipManager = new RelationshipManager([]);
+        relationshipManager.relationships = relationships as RelationshipMap;
+      } else {
+        // Create a new relationship manager if none exists
+        relationshipManager = new RelationshipManager(queens);
+      }
+      
+      // Update relationships based on the elimination decisions
+      relationshipManager.updateRelationshipsAfterLegacy(
+        legacyLipSyncWinner.name, // winner
+        legacyLipSyncLoser.name, // loser
+        eliminated, // eliminated queen
+        saved, // saved queen
+        lipstickChoices[legacyLipSyncLoser.name], // who loser would have chosen
+        episodeNumber,
+        queens
+      );
+        // Updated relationships after this episode's events
+      const updatedRelationships = relationshipManager.relationships;
+      
+      // Update placements for legacy format to reflect lip sync results
+      const legacyPlacements = { ...placements };
+      // The legacy lip sync winner gets the WIN placement
+      legacyPlacements[legacyLipSyncWinner.name] = "WIN";
+      // The legacy lip sync loser gets the TOP2 placement (silver runner-up)
+      legacyPlacements[legacyLipSyncLoser.name] = "TOP2";
+      
+      // Create detailed episode data for legacy format
+      const episodeData = {
+        episodeNumber,
+        challenge: challengeType,
         challengeScores,
         runwayScores,
-        riskTaking,
-        pressureState: pressureStates,
-        lipSyncScores,
-        placements,
-      },
+        winner: legacyLipSyncWinner.name, // Winner of the lipsync
+        maxi_challenge_winner: winnerName, // Top performer in the challenge
+        top2: top2Names,
+        high: highQueens.filter(name => !top2Names.includes(name)), // High excludes top 2
+        safe: queens.map(q => q.name).filter(name => 
+          !top2Names.includes(name) && 
+          !highQueens.includes(name) && 
+          name !== lowQueen &&
+          !bottomNames.includes(name)
+        ),
+        low: lowQueen,
+        bottom2: bottomNames,
+        lipSyncSong: `${selectedSong.title} by ${selectedSong.artist}`,
+        lipSyncSongId: selectedSong.id,
+        eliminated,
+        eliminatedBy: legacyLipSyncWinner.name,
+        lipstickChoices,
+        loserWouldHaveChosen: lipstickChoices[legacyLipSyncLoser.name],
+        remaining,
+        seasonFormat: "legacy",
+        relationships: updatedRelationships, // Include updated relationships
+        details: {
+          challengeScores,
+          runwayScores,
+          riskTaking,
+          pressureState: pressureStates,
+          placements: legacyPlacements, // Use updated placements with TOP2
+          lipstickChoices
+        },
+      }
+      
+      return NextResponse.json(episodeData)    } else {
+      // Regular format - we'll still pass back relationships even though they don't change much
+      // This keeps the API response consistent between formats
+      const relationshipMap = relationships as RelationshipMap;
+      
+      const episodeData = {
+        episodeNumber,
+        challenge: challengeType,
+        challengeScores,
+        runwayScores,
+        winner: winnerName,
+        high: highQueens,
+        low: lowQueen,
+        bottom2: bottom2Queens,
+        lipSyncSong: `${selectedSong.title} by ${selectedSong.artist}`,
+        lipSyncSongId: selectedSong.id, // Add the song ID for tracking
+        eliminated: eliminated.name,
+        remaining,
+        seasonFormat: "regular",
+        relationships: relationshipMap, // Include existing relationships without major changes
+        details: {
+          challengeScores,
+          runwayScores,
+          riskTaking,
+          pressureState: pressureStates,
+          lipSyncScores,
+          placements,
+        },
+      }
+      
+      return NextResponse.json(episodeData)
     }
-
-    return NextResponse.json(episodeData)
   } catch (error) {
     console.error("Episode simulation error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })

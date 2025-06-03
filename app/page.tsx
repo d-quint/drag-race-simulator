@@ -8,49 +8,7 @@ import { SongManager } from "@/components/song-manager"
 import { SimulationRunner } from "@/components/simulation-runner"
 import { Crown, Music, Users, Play } from "lucide-react"
 import { SavedSessions } from "@/components/saved-sessions"
-
-export interface Queen {
-  id: string
-  name: string
-  imageUrl?: string
-  // Charisma
-  congeniality: number
-  loyalty: number
-  // Uniqueness
-  novelty: number
-  conceptualDepth: number
-  // Nerve
-  riskTolerance: number
-  conflictResilience: number
-  // Talent
-  designVision: number
-  comedyChops: number
-  lipSyncProwess: number
-  runwayPresence: number
-  actingAbility: number
-  vocalMusicality: number
-  // Additional
-  versatility: number
-  adaptability: number
-  starPower: number
-}
-
-export interface Song {
-  id: string
-  title: string
-  artist: string
-  genre: string
-  album_image?: string
-  preview_url?: string
-  spotify_uri?: string
-  hasPreview?: boolean
-}
-
-export interface SimulationResult {
-  winner: Queen
-  topQueens: Queen[]
-  // Add more result details as needed
-}
+import { Queen, Song, SimulationResult } from "@/lib/types"
 
 export interface SimulationSession {
   id: string

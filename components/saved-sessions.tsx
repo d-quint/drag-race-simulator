@@ -13,7 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Trash2, Eye, Calendar, Crown, Users, Music, Star, Trophy } from "lucide-react"
-import type { SimulationSession } from "@/app/page"
+import type { SimulationSession } from "@/lib/types"
 import { TrackRecordTable } from "@/components/track-record-table"
 
 // Add local type augmentation to handle different shapes of SimulationResult
@@ -387,7 +387,7 @@ export function SavedSessions() {
                                                     ? "Top 2:"
                                                     : "Bottom 2:"}
                                                 </span>
-                                                {episode.bottom2.map((queen) => {
+                                                {episode.bottom2.map((queen: string | { name: string; [key: string]: any }) => {
                                                   const queenName = typeof queen === 'string' ? queen : queen?.name || 'Unknown';
                                                   return (
                                                     <Badge key={queenName} variant="outline">
@@ -408,9 +408,8 @@ export function SavedSessions() {
                                           </div>
                                         </div>
                                         <div className="mt-4">
-                                          <p className="text-sm text-gray-600 mb-2">
-                                            Remaining Queens: {episode.remaining ? 
-                                              episode.remaining.map(queen => 
+                                          <p className="text-sm text-gray-600 mb-2">                                            Remaining Queens: {episode.remaining ? 
+                                              episode.remaining.map((queen: string | { name: string; [key: string]: any }) => 
                                                 typeof queen === 'string' ? queen : queen.name
                                               ).join(", ") 
                                               : "N/A"}
@@ -420,8 +419,7 @@ export function SavedSessions() {
                                             standings: episode.standings || {},
                                             // Normalize properties that might be objects
                                             winner: typeof episode.winner === 'string' ? episode.winner : episode.winner?.name || '',
-                                            eliminated: typeof episode.eliminated === 'string' ? episode.eliminated : episode.eliminated?.name || '',
-                                            bottom2: (episode.bottom2 || []).map(queen => 
+                                            eliminated: typeof episode.eliminated === 'string' ? episode.eliminated : episode.eliminated?.name || '',                                            bottom2: (episode.bottom2 || []).map((queen: string | { name: string; [key: string]: any }) => 
                                               typeof queen === 'string' ? queen : queen.name
                                             )
                                           }} />
