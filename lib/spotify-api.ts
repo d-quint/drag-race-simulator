@@ -30,22 +30,9 @@ const SCOPES = [
 ];
 
 /**
- * Save user-provided Spotify Client ID for custom app integration
- */
-export const saveUserSpotifyClientId = (clientId: string): void => {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('user_spotify_client_id', clientId);
-  }
-};
-
-/**
- * Get the current Spotify Client ID (either user-provided or environment variable)
+ * Get the current Spotify Client ID
  */
 export const getCurrentSpotifyClientId = (): string => {
-  if (typeof window !== 'undefined') {
-    const userClientId = localStorage.getItem('user_spotify_client_id');
-    return userClientId || CLIENT_ID;
-  }
   return CLIENT_ID;
 };
 
