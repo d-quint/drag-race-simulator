@@ -17,7 +17,7 @@ This document provides a detailed explanation of the Drag Race Simulator codebas
 
 ## Project Overview
 
-The Drag Race Simulator is a web application that simulates a drag competition similar to RuPaul's Drag Race. Users can create custom drag queens with unique statistics, add songs for lip sync battles (including Spotify integration), and run simulations in narrative or quick modes. The app features advanced statistics, a relationship system, and a detailed, step-by-step narrative mode.
+ Drag Race Simulator is a web application that simulates a drag competition similar to RuPaul's Drag Race. Users can create custom drag queens with unique statistics, add songs for lip sync battles (including Spotify integration), and run simulations in narrative or quick modes. The app features advanced statistics, a relationship system, and a detailed, step-by-step narrative mode.
 
 The application is built using:
 - Next.js for the framework
