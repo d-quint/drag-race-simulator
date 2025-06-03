@@ -1525,9 +1525,6 @@ export function NarrativeSimulation({ queens, songs, onComplete, isQuickMode = f
                             className="w-full h-full object-cover"
                           />
                         </div>
-                        <div className="absolute -top-2 -right-2 w-8 h-8 bg-yellow-400 text-yellow-900 rounded-full flex items-center justify-center font-bold">
-                          {index + 1}
-                        </div>
                       </div>
                       <h2 className="text-2xl font-bold mb-3">{queenName}</h2>
       
@@ -1535,19 +1532,6 @@ export function NarrativeSimulation({ queens, songs, onComplete, isQuickMode = f
                   );
                 })}
               </div>
-              
-              {/* Legacy format explanation */}
-              <div className="bg-white/20 rounded-xl p-6 mt-6">
-                <div className="flex items-center justify-center mb-3">
-                  <Trophy className="w-6 h-6 mr-2" />
-                  <h3 className="text-xl font-bold">Legacy Format</h3>
-                </div>
-                <p className="text-lg leading-relaxed">
-                  "You'll lip sync for your legacy, and the winner will receive a cash tip of $10,000 
-                  and the power to eliminate one of the bottom queens."
-                </p>
-              </div>
-            
             </CardContent>
           </Card>
         );      case "legacy-lipsync":
